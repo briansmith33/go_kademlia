@@ -1,0 +1,4 @@
+go.mod
+kademlia.exe
+priv_key.pem
+pub_key.pem
