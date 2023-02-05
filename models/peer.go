@@ -107,11 +107,10 @@ func (p *Peer) PerformKeyExchange() bool {
 	data, err := json.Marshal(offer)
 	utils.CheckError(err)
 	b64 := base64.StdEncoding.EncodeToString(data)
-	msg := b64 + "<EOF>"
 	conn, err := net.DialUDP("udp", nil, p.Addr)
 	utils.CheckError(err)
 	defer conn.Close()
-	conn.Write([]byte(msg))
+	conn.Write([]byte(b64)+[]byte{4})
 	msg = ""
 	for {
 		chunk := make([]byte, constants.BUFFER)
@@ -120,11 +119,11 @@ func (p *Peer) PerformKeyExchange() bool {
 			return false
 		}
 		msg += strings.TrimSpace(string(chunk))
-		if strings.Contains(msg, "<EOF>") {
+		if strings.Contains(msg, string(4)) {
 			break
 		}
 	}
-	msg = strings.Replace(msg, "<EOF>", "", -1)
+	msg = strings.Replace(msg, string(4), "", -1)
 	byteData, _ := base64.StdEncoding.DecodeString(msg)
 	var jsonData KeyOffer
 	json.Unmarshal(byteData, &jsonData)
@@ -141,7 +140,7 @@ func (p *Peer) Send(conn *net.UDPConn, msgType string, msgData []byte) bool {
 	marshalledMsg, err := json.Marshal(msg)
 	utils.CheckError(err)
 	encrypted_data := utils.Encrypt(marshalledMsg, p.AesKey)
-	conn.Write([]byte(encrypted_data + "<EOF>"))
+	conn.Write([]byte(encrypted_data)+[]byte{4})
 	return true
 }
 
@@ -155,11 +154,11 @@ func (p *Peer) Receive(conn *net.UDPConn) (string, []byte, *net.UDPAddr, error) 
 		_, addr, err = conn.ReadFromUDP(chunk)
 
 		msg += strings.TrimSpace(string(chunk))
-		if strings.Contains(msg, "<EOF>") {
+		if strings.Contains(msg, string(4)) {
 			break
 		}
 	}
-	msg = strings.Replace(msg, "<EOF>", "", -1)
+	msg = strings.Replace(msg, string(4), "", -1)
 	decrypted := utils.Decrypt(msg, p.AesKey)
 
 	var jsonData Msg

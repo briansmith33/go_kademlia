@@ -69,12 +69,12 @@ func (s *Server) GetKey() []byte {
 		_, addr, err = s.Conn.ReadFromUDP(chunk)
 		utils.CheckError(err)
 		msg += strings.TrimSpace(string(chunk))
-		if strings.Contains(msg, "<EOF>") {
+		if strings.Contains(msg, string(4)) {
 			break
 		}
 	}
 
-	msg = strings.Replace(msg, "<EOF>", "", -1)
+	msg = strings.Replace(msg, string(4), "", -1)
 	message, _ := base64.StdEncoding.DecodeString(msg)
 	var offer KeyOffer
 	err := json.Unmarshal(message, &offer)
@@ -105,8 +105,7 @@ func (s *Server) GetKey() []byte {
 			data, err := json.Marshal(response)
 			utils.CheckError(err)
 			b64 := base64.StdEncoding.EncodeToString(data)
-			msg := b64 + "<EOF>"
-			s.Conn.WriteTo([]byte(msg), addr)
+			s.Conn.WriteTo([]byte(b64)+[]byte{4}, addr)
 			return s.getKey(offer.Prime, privKey, offer.Key)
 		}
 	}
@@ -118,7 +117,7 @@ func (s *Server) Send(addr *net.UDPAddr, key []byte, msgType string, msgData []b
 	marshalledMsg, err := json.Marshal(msg)
 	utils.CheckError(err)
 	encrypted_data := utils.Encrypt(marshalledMsg, key)
-	s.Conn.WriteTo([]byte(encrypted_data+"<EOF>"), addr)
+	s.Conn.WriteTo([]byte(encrypted_data)+[]byte{4}, addr)
 }
 
 func (s *Server) Receive(key []byte) (string, []byte, *net.UDPAddr, error) {
@@ -129,11 +128,11 @@ func (s *Server) Receive(key []byte) (string, []byte, *net.UDPAddr, error) {
 		chunk := make([]byte, constants.BUFFER)
 		_, addr, err = s.Conn.ReadFromUDP(chunk)
 		msg += strings.TrimSpace(string(chunk))
-		if strings.Contains(msg, "<EOF>") {
+		if strings.Contains(msg, string(4)) {
 			break
 		}
 	}
-	msg = strings.Replace(msg, "<EOF>", "", -1)
+	msg = strings.Replace(msg, string(4), "", -1)
 	decrypted := utils.Decrypt(msg, key)
 	var jsonData Msg
 	json.Unmarshal([]byte(decrypted), &jsonData)
@@ -253,14 +252,14 @@ func (s *Server) Broadcast(event *Event) {
 	}
 
 	for _, peer := range randPeers {
-		cmd := CmdRequest{
-			Cmd:       event.Data,
+		msgRequest := MsgRequest{
+			Msg:       event.Data,
 			Signature: event.Signature,
 		}
-		msg, err := json.Marshal(cmd)
+		msg, err := json.Marshal(msgRequest)
 		utils.CheckError(err)
 
-		peer.SendRecv("command", msg)
+		peer.SendRecv("message", msg)
 	}
 }
 
@@ -328,8 +327,8 @@ func (s *Server) Listen() {
 			}
 		}
 
-		if msgType == "command" {
-			var request CmdRequest
+		if msgType == "message" {
+			var request MsgRequest
 			err := json.Unmarshal(data, &request)
 			utils.CheckError(err)
 			hash := sha1.New()
@@ -337,18 +336,10 @@ func (s *Server) Listen() {
 			peerID := hex.EncodeToString(hash.Sum(nil))
 			latest_event := s.Events.Last()
 			if (latest_event != nil && binary.BigEndian.Uint64(latest_event.Signature) != binary.BigEndian.Uint64(request.Signature)) || latest_event == nil {
-				if ed25519.Verify(s.PubKey, []byte(request.Cmd), request.Signature) {
-					fmt.Println("\n"+peerID, request.Cmd)
-					/*
-						cmd := exec.Command("powershell.exe", request.Cmd)
-						var out bytes.Buffer
-						cmd.Stdout = &out
-						err = cmd.Run()
-						utils.CheckError(err)
-
-						fmt.Println(strings.Replace(out.String(), "\r\n", "", -1))
-					*/
-					event := &Event{Data: request.Cmd, Signature: request.Signature}
+				if ed25519.Verify(s.PubKey, []byte(request.Msg), request.Signature) {
+					fmt.Println("\n"+peerID, request.Msg)
+					
+					event := &Event{Data: request.CmdMsg, Signature: request.Signature}
 					s.Broadcast(event)
 					go s.Events.Append(event)
 				} else {
