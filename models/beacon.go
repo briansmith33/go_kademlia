@@ -339,7 +339,7 @@ func (s *Server) Listen() {
 				if ed25519.Verify(s.PubKey, []byte(request.Msg), request.Signature) {
 					fmt.Println("\n"+peerID, request.Msg)
 					
-					event := &Event{Data: request.CmdMsg, Signature: request.Signature}
+					event := &Event{Data: request.Msg, Signature: request.Signature}
 					s.Broadcast(event)
 					go s.Events.Append(event)
 				} else {
